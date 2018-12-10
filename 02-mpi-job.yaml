@@ -1,0 +1,108 @@
+allowVolumeExpansion: true
+apiVersion: storage.k8s.io/v1beta1
+kind: StorageClass
+metadata:
+  creationTimestamp: null
+  name: pwx-mpi-worker
+parameters:
+  repl: "3"
+provisioner: kubernetes.io/portworx-volume
+reclaimPolicy: Delete
+---
+iapiVersion: kubeflow.org/v1alpha1
+kind: MPIJob
+metadata:
+  name: mpijob-pwx
+spec:
+  launcherPodTemplateSpec:
+    metadata:
+      labels:
+        mpi-split-pwx: mpi-split-pwx-launcher
+    spec:
+      containers:
+      - command:
+        - mpirun
+        - ls
+        - /mnt/local/images
+        image: disrani/mpi-operator-jobs
+        imagePullPolicy: IfNotPresent
+        name: launcher
+        resources: {}
+      restartPolicy: Never
+  replicas: 3
+  workerPodTemplateSpec:
+    metadata:
+      labels:
+        mpi-split-pwx: mpi-split-pwx
+    spec:
+      schedulerName: stork
+      containers:
+      - image: disrani/mpi-operator-jobs
+        imagePullPolicy: IfNotPresent
+        name: worker
+        resources: {}
+        volumeMounts:
+        - mountPath: /mnt/local
+          name: pwx-pvc
+      initContainers:
+      - command:
+        - /split.py
+        - --input_path
+        - s3://$(BKT_NAME)/testimages
+        - --output_path
+        - /mnt/local/images
+        - --file_pattern
+        - '*.jpg'
+        - --replica_count
+        - "3"
+        env:
+        - name: BKT_NAME
+          value: images
+        - name: AWS_ACCESS_KEY_ID
+          value: "USK0H0Q4H1AO3UZCVE6O"  # Credentials only needed if connecting to a private endpoint
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "zpO2Ox8++cvNwfxEFh4EJhioZNtX4/98f92N898p"
+        - name: AWS_REGION
+          value: us-east-1   # Region for the S3 bucket, this is not always needed. Default is us-east-1.
+        - name: S3_ENDPOINT
+          value: "192.168.56.72:9010"
+        - name: S3_USE_HTTPS
+          value: "0"   # Whether or not to use HTTPS. Disable with 0.
+        image: disrani/tensorflow-filesplit
+        imagePullPolicy: IfNotPresent
+        name: init
+        resources: {}
+        volumeMounts:
+        - mountPath: /mnt/local
+          name: pwx-pvc
+      - args:
+        - ls -la /mnt/local/images
+        command:
+        - /bin/sh
+        - -c
+        image: busybox
+        imagePullPolicy: IfNotPresent
+        name: verify
+        resources: {}
+        volumeMounts:
+        - mountPath: /mnt/local
+          name: pwx-pvc
+      restartPolicy: Never
+      volumes:
+      - name: pwx-pvc
+        persistentVolumeClaim:
+          claimName: pwx-pvc
+  workerVolumeClaimTemplate:
+  - metadata:
+      name: pwx-pvc
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: pwx-mpi-worker
+    status: {}
+status: {}
+
+

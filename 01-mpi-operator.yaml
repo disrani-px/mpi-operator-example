@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mpi-operator
+  namespace: mpi-operator
+  labels:
+    app: mpi-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mpi-operator
+  template:
+    metadata:
+      labels:
+        app: mpi-operator
+    spec:
+      serviceAccountName: mpi-operator
+      containers:
+      - name: mpi-operator
+        image: disrani/mpi-operator:latest
+        command:
+          - /bin/mpi-operator
+        args: [
+          "--gpus-per-node", "8",
+          "--kubectl-delivery-image",
+          "mpioperator/kubectl-delivery:latest"
+        ]
+        imagePullPolicy: Always
